@@ -296,50 +296,40 @@ drivers_df |>
 Using a dataset that combines each of the uncertainty data-frames into a single data frame:
 
 ```{r}
-#| fig-cap: Figure 9a. Forecast with added total uncertainties for NEE.
+#| fig-cap: Figure 9a. Forecast with added total uncertainties.
 combined_df <- bind_rows(parameter_df, process_df, initial_conditions_df, drivers_df)
 
-#for nee
-combined_df_nee <- filter(combined_df, variable == "nee") 
-sd_df_nee <- combined_df_nee %>%
-  group_by(datetime, model_id) %>%
-  summarize(sd = sd(prediction, na.rm = TRUE)) %>%
+
+#Calculate total added uncertainty
+var_all <- combined_df %>%
+  group_by(datetime, model_id, variable) %>%
+  summarize(variance = var(prediction, na.rm = TRUE)) %>%
+  ungroup() 
+
+#Add all variances for individual variables
+Additive_var <- var_all %>%
+  group_by(datetime, variable) %>%
+  summarize(variance = sum(variance, na.rm = TRUE)) %>%
+  mutate(model_id = "added_unc") %>%
   ungroup()
+
+total_var <- bind_rows(var_all, Additive_var)
+
+#select required variables
+combined_df_selected <- filter(total_var, variable == "nee" | variable == "lai" | variable == "som" | variable == "wood") 
 
 #Plot the partitioned uncertainties
 ggplot() +
-    geom_bar(data = sd_df_nee, aes(x = datetime, y = sd, fill = model_id), stat = "identity", position = "stack") +
-    ylab("Standard Deviation") +
+    geom_line(data = combined_df_selected, aes(x = datetime, y = variance, color = model_id)) +
+    ylab("Variance") +
     xlab("Forecasted date") +
     scale_fill_manual(values = c("process_unc" = "red", "parameter_unc" = "purple", "initial_unc" = "orange",
                                  "driver_unc" = "blue")) +
-    scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
+    scale_x_date(date_breaks = "5 day", date_labels = "%b %d") +
     labs(fill = "Uncertainty") +
     theme_bw(base_size = 12)+
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-```
-
-```{r}
-#| fig-cap: Figure 9b. Forecast with added total uncertainties for Wood.
-#for wood
-combined_df_wood <- filter(combined_df, variable == "wood") 
-sd_df_wood <- combined_df_wood %>%
-  group_by(datetime, model_id) %>%
-  summarize(sd = sd(prediction, na.rm = TRUE)) %>%
-  ungroup()
-
-#Plot the partitioned uncertainties
-ggplot() +
-    geom_bar(data = sd_df_wood, aes(x = datetime, y = sd, fill = model_id), stat = "identity", position = "stack") +
-    ylab("Standard Deviation") +
-    xlab("Forecasted date") +
-    scale_fill_manual(values = c("process_unc" = "red", "parameter_unc" = "purple", "initial_unc" = "orange",
-                                 "driver_unc" = "blue")) +
-    scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
-    labs(fill = "Uncertainty") +
-    theme_bw(base_size = 12)+
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    facet_wrap(~variable, scale = "free")
 
 ```
 
@@ -361,6 +351,10 @@ Answer with text, code, and plots the following questions
 
 Using the code above as a guide, create code to estimate uncertainty based on the propagation all sources at the same time (unlike the one-at-a-time approach above).
 
+Answer with text, code, and plots the following questions
+
+-   Plot the forecast with the combined uncertainty.
+
 ```{r}
 #| fig-cap: Figure 10a. Forecast with combined uncertainties for NEE and Wood respectively.
 #Total unc
@@ -372,11 +366,11 @@ for(t in 2:length(sim_dates)){
                                inputs = matrix(new_inputs_ensemble[t ,, ], nrow = ens_members))
 }
 
-total_unc_df <- output_to_df(new_output, sim_dates, sim_name = "total_unc")
+combined_unc_df <- output_to_df(new_output, sim_dates, sim_name = "total_unc")
 
 #Plot the graph
-total_unc_df |> 
-  filter(variable %in% c("nee", "wood")) |> 
+combined_unc_df |> 
+  filter(variable %in% c("nee", "wood", "lai", "som")) |> 
   summarise(median = median(prediction, na.rm = TRUE), 
             upper90 = quantile(prediction, 0.95, na.rm = TRUE),
             lower90 = quantile(prediction, 0.05, na.rm = TRUE),
@@ -389,51 +383,34 @@ total_unc_df |>
 ```
 
 ```{r}
-#| fig-cap: Figure 10b. Forecast with combined uncertainties for NEE.
-#Calculate the variance (SD) and plot 
-##For NEE
-total_unc_df_nee <- filter(total_unc_df, variable == "nee")
-sd_total_df_nee <- total_unc_df_nee %>%
+#| fig-cap: Figure 10b. Forecast with all types of uncertainties.
+#Calculate the variance and plot.
+
+var_combined_df <- combined_unc_df %>%
   group_by(datetime, variable) %>%
-  summarize(sd = sd(prediction, na.rm = TRUE)) %>%
+  summarize(variance = var(prediction, na.rm = TRUE)) %>%
+  mutate(model_id = "combined_unc") %>%
   ungroup()
+
+#Bind rows
+final_var_df <- bind_rows(total_var, var_combined_df)
+
+#select required variables
+combined_df_selected <- filter(final_var_df, variable == "nee" | variable == "lai" | variable == "som" | variable == "wood")
 
 #Plot the partitioned uncertainties
 ggplot() +
-    geom_bar(data = sd_total_df_nee, aes(x = datetime, y = sd, fill = "total_uncertainty"), stat = "identity", position = "stack") +
-    ylab("Standard Deviation") +
+    geom_line(data = combined_df_selected, aes(x = datetime, y = variance, color = model_id)) +
+    ylab("Variance") +
     xlab("Forecasted date") +
-    scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
+    scale_x_date(date_breaks = "5 day", date_labels = "%b %d") +
     labs(fill = "Uncertainty") +
     theme_bw(base_size = 12)+
-    theme(axis.text.x = element_text(angle = 90))
+    theme(axis.text.x = element_text(angle = 90)) +
+  facet_wrap(~variable, scales = "free")
 
 ```
-
-```{r}
-#| fig-cap: Figure 10c. Forecast with combined uncertainties for Wood.
-##For Wood
-total_unc_df_wood <- filter(total_unc_df, variable == "wood")
-sd_total_df_wood <- total_unc_df_wood %>%
-  group_by(datetime, variable) %>%
-  summarize(sd = sd(prediction, na.rm = TRUE)) %>%
-  ungroup()
-
-#Plot the partitioned uncertainties
-ggplot() +
-    geom_bar(data = sd_total_df_wood, aes(x = datetime, y = sd, fill = "total_uncertainty"), stat = "identity", position = "stack") +
-    ylab("Standard Deviation") +
-    xlab("Forecasted date") +
-    scale_x_date(date_breaks = "1 day", date_labels = "%b %d") +
-    labs(fill = "Uncertainty") +
-    theme_bw(base_size = 12)+
-    theme(axis.text.x = element_text(angle = 90))
-```
-
-Answer with text, code, and plots the following questions
-
--   Plot the forecast with the combined uncertainty.
 
 -   If you calculate the variance of the combined uncertainty and compared to the sum of the individual variances, do they match? What does it mean if they are different?
 
-    Ans: The variance (SD) of combined uncertainty was lower than that evaluated from adding individual uncertainties. This implies that the individual errors/uncertainties/deviations are additive and reinforce each other.
+    Ans: The variance of combined uncertainty was lower(throughout 30-day horizon for NEE and mostly equivalent for Wood) than that evaluated from adding individual uncertainties. This implies that the individual errors/uncertainties/deviations are additive and reinforce each other.
