@@ -1,0 +1,265 @@
+---
+title: "Parameter calibration: likelihood methods"
+format:
+  html:
+    embed-resources: true
+editor: visual
+---
+
+## Problem set
+
+You will be asked submit (via Canvas) your rendered (or knitted) html document
+
+```{r}
+library(tidyverse)
+```
+
+### Part 1
+
+Load dataset
+
+```{r}
+d <- read_csv(file = "https://data.ecoforecast.org/neon4cast-targets/phenology/phenology-targets.csv.gz", show_col_types = FALSE)
+```
+
+Filter the dataset to only include the site_id BART (Bartlett Experimental Forest in the White Mountains of New Hampshire) and the dates between 2019-01-01 and 2019-07-01. Convert the date to Day of Year (hint: use `lubridate:: yday()` function). Remove rows with gcc_90 equal to NA or gcc_sd equal to 0.
+
+```{r}
+library(lubridate)
+bart_2019 <- d  %>%
+  filter(site_id == "BART",
+         datetime > as_date("2019-01-01"),
+         datetime < as_date("2019-07-01"),
+         variable == "gcc_90") %>%
+  mutate(doy = yday(datetime)) %>% 
+  filter(!is.na(observation),
+         observation > 0)
+```
+
+**Question 1:** How is gcc_90 related to day of year?
+
+**Answer 1:**
+
+There's a noticeable increase in gcc_90 values starting around day 100, peaking towards day 150, which could correspond to the late spring and early summer months, typically associated with significant vegetation growth due to favorable weather conditions.
+
+```{r}
+
+ggplot(bart_2019, aes(x = doy, y = observation)) +
+  geom_point() +
+  labs(x = "Day of Year", y = "GCC 90", title = "Relationship between GCC 90 and Day of Year") +
+  theme_minimal()
+#Add Answer
+```
+
+**Question 2:** Use a histogram to examine the distribution of the gcc_90
+
+**Answer 2:**
+
+Most gcc_90 values are concentrated around the lower end of the scale, with the highest frequency in the first bin. There's a long tail towards the higher gcc_90 values, indicating fewer observations with higher gcc_90. This suggests that the gcc_90 values are skewed to the right.
+
+```{r}
+#Add Answer
+
+library(ggplot2)
+
+ggplot(bart_2019, aes(x = observation)) +
+  geom_histogram(binwidth = 0.01, color = "black") +
+  labs(title = "Distribution of gcc_90",
+       x = "gcc_90",
+       y = "Frequency") +
+  theme_minimal()
+
+```
+
+First create a function called \`pred_logistic' that is your process model. The model is the the logistic curve which ish the equation $$P_1 + P_2 {{exp(P_3 + P_4 x)}\over{1+exp(P_3 + P_4 x)}}$$
+
+**Question 3:** Is this process model a dynamic model? Why or why not?
+
+**Answer 3:**
+
+**No, doesnot depends on the previous state.**
+
+**Question 4:** Based on the equation above, write a function that predicts the gcc_90 as a function of the parameters ($P$) and x where x is the DOY. Name that function `pred_logistic`.
+
+**Answer 4:**
+
+```{r}
+#Add Answer
+
+pred_logistic <- function(x, par){
+  y <- par[1] + (par[2] * exp(par[3]+par[4]*x)/(1+exp(par[3]+par[4]*x)))
+  
+}
+```
+
+**Question 5:** Write a function that calculates the negative log-likelihood of the data given a set of parameters governing the process and data models. Assume a normal distribution and be sure to estimate the sd in the data model.
+
+**Answer 5:**
+
+```{r}
+#Add Answer
+LL_fn <- function(par, x, y){
+  -sum(dnorm(y, mean = pred_logistic(x, par), sd = par[5], log = TRUE))
+}
+```
+
+**Question 6:** Use the `optim` function to find the most likely parameter values. Use the following as starting values `par = c(0.34,0.11,-15,0.11, 1)` where the first four are the theta parameters from your process model and the fifth is the sd of your data model.
+
+**Answer 6:**
+
+```{r}
+#Add Answer
+fit <- suppressWarnings(optim(par = c(0.34,0.11,-15,0.11, 1), fn = LL_fn, method = "BFGS", x = bart_2019$doy, y = bart_2019$observation))
+fit$par
+ggplot()+
+  geom_point(data = bart_2019, aes(x=doy, y=observation))+
+  geom_line(aes(x=bart_2019$doy, y=pred_logistic(x=bart_2019$doy,par=fit$par)))
+```
+
+**Question 7:** Use your optimal parameters in the `pred_logistic` function to predict the data. Save this as the object `predicted`
+
+**Answer 7:**
+
+```{r}
+#Add Answer
+optimal_params <- fit$par
+
+# Predict the data using optimal parameters
+predicted <- pred_logistic(bart_2019$doy, optimal_params)
+```
+
+**Question 8:** Calculate the residuals and plot a histogram of the residuals
+
+**Answer 8:**
+
+```{r}
+#Add Answer
+
+# Calculate residuals
+residuals <- bart_2019$observation - predicted
+
+# Plot histogram of residuals
+hist(residuals, main = "Histogram of Residuals", xlab = "Residuals", ylab = "Frequency", border = "black")
+
+
+
+
+```
+
+**Question 9:** How does the distribution of the data (Question 2) compare to the distribution of the residuals?
+
+**Answer 9:**
+
+The histogram of the residuals appears to be roughly symmetric around zero, indicating that the logistic model has done a reasonable job of capturing the main trend in the gcc_90 data. The residuals are more evenly distributed across different values with no significant skew, compared to the original gcc_90 data, which was right-skewed.
+
+**Question 10:** Predict year 2020 using the process model parameters from the 2019 fit.
+
+**Answer 10:**
+
+```{r}
+#Add Answer
+bart_2020 <- d  %>%
+  filter(site_id == "BART",
+         datetime > as_date("2020-01-01"),
+         datetime < as_date("2020-07-01"),
+         variable == "gcc_90") %>%
+  mutate(doy = yday(datetime)) %>% 
+  filter(!is.na(observation),
+         observation > 0)
+
+predicted_2020 <- pred_logistic(bart_2020$doy, optimal_params)
+```
+
+**Question 11:** Plot the forecast from Question 10 over the data from 2020 (I give the code for getting the 2020 data)
+
+**Answer 11:**
+
+```{r}
+bart_2020 <- d  %>%
+  filter(site_id == "BART",
+         datetime > as_date("2020-01-01"),
+         datetime < as_date("2020-07-01"),
+         variable == "gcc_90") %>%
+  mutate(doy = yday(datetime)) %>% 
+  filter(!is.na(observation),
+         observation > 0)
+
+# Plot the forecast over the data from 2020
+ggplot() +
+  geom_point(data = bart_2020, aes(x = doy, y = observation), color = "gray", alpha = 0.6) +  # Actual data for 2020
+  geom_line(aes(x = bart_2020$doy, y = predicted_2020), color = "black") +  # Forecast for 2020
+  labs(title = "Forecast for 2020",
+       x = "Day of Year",
+       y = "gcc_90") +
+  theme_minimal()
+
+```
+
+**Question 12:** Do you think your model from 2019 is reasonable for predicting 2020?
+
+**Answer 12:**
+
+The forecast for 2020, fitted from the 2019 data, shows The logistic curve seems to fit the overall trend of the data points well, capturing the general pattern of vegetation greenness as it changes over the year.
+
+### Part 2 {#sec-q10}
+
+Using the following data
+
+```{r}
+df <- read_csv("https://raw.githubusercontent.com/frec-5174/eco4cast-in-R-book/main/data/soil_respiration_module_data.csv", show_col_types = FALSE)
+```
+
+It is a dataset that reports soil respiration, soil temperature, and soil moisture over a year at the University of Michigan Biological Station (from Nave, L.E., N. Bader, and J.L. Klug)
+
+The columns correspond to the following
+
+-   doy = Day of Year\
+-   soil_resp: Soil respiration (micromoles CO2 per m2 per second)\
+-   soil_temp: Soil Temp (deg C) soil_moisture: Soil Moisture (%)\
+
+Use maximum likelihood to estimate the parameters in the model that predicts the relationship between soil temperature and soil respiration using the Q10 function below
+
+$$\theta_1 * \theta_2 ^{{(T - 20)}\over{10}}$$
+
+Show all the steps to determine the most likely parameter values, report the parameter values, and plot the data and predictions on the same plot
+
+Answer:
+
+```         
+```
+
+```{r}
+
+library(stats4)
+library(ggplot2)
+
+
+# Step 2: Define the Q10 model function
+Q10_model <- function(T, theta1, theta2) {
+  theta1 * theta2^((T - 20) / 10)
+}
+
+# Step 3: Define the negative log-likelihood function
+nLL <- function(theta1, theta2, sigma) {
+  predictions <- Q10_model(df$soil_temp, theta1, theta2)
+  if(sigma <= 0) return(Inf) # sigma must be positive, return a result of infinite likelihood if non-positive
+  -sum(dnorm(df$soil_resp, mean = predictions, sd = sigma, log = TRUE))
+}
+
+# Step 4: Estimate parameters using MLE
+mle_result <- mle(nLL, start = list(theta1 = 1, theta2 = 2, sigma = 1))
+
+# Step 5: Extract estimated parameters
+estimated_params <- summary(mle_result)@coef[,"Estimate"]
+
+# Use the estimated parameters to predict soil respiration
+df$predicted_soil_resp <- Q10_model(df$soil_temp, estimated_params["theta1"], estimated_params["theta2"])
+
+# Step 6: Plot the observed data and predictions
+ggplot(df, aes(x = soil_temp)) +
+  geom_point(aes(y = soil_resp), colour = "gray") +
+  geom_line(aes(y = predicted_soil_resp), colour = "black") +
+  labs(title = "Soil Respiration Model", x = "Soil temperature (degC)", y = "Soil Respiration (umolCO2/m2.s)") +
+  theme_minimal()
+
+```
