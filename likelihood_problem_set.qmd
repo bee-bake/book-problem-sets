@@ -1,6 +1,8 @@
 ---
 title: "Parameter calibration: likelihood methods"
-format: html
+format: 
+  html:
+    embed-resources: true
 editor: visual
 ---
 
@@ -23,6 +25,7 @@ d <- read_csv(file = "https://data.ecoforecast.org/neon4cast-targets/phenology/p
 Filter the dataset to only include the site_id BART (Bartlett Experimental Forest in the White Mountains of New Hampshire) and the dates between 2019-01-01 and 2019-07-01. Convert the date to Day of Year (hint: use `lubridate:: yday()` function). Remove rows with gcc_90 equal to NA or gcc_sd equal to 0.
 
 ```{r}
+library(lubridate)
 bart_2019 <- d  %>%
   filter(site_id == "BART",
          datetime > as_date("2019-01-01"),
@@ -38,7 +41,7 @@ bart_2019 <- d  %>%
 **Answer 1:**
 
 ```{r}
-#Add Answer
+plot(bart_2019$doy, bart_2019$observation)
 ```
 
 **Question 2:** Use a histogram to examine the distribution of the gcc_90
@@ -46,21 +49,23 @@ bart_2019 <- d  %>%
 **Answer 2:**
 
 ```{r}
-#Add Answer
+hist(bart_2019$observation)
 ```
 
 First create a function called \`pred_logistic' that is your process model. The model is the the logistic curve which ish the equation $$P_1 + P_2 {{exp(P_3 + P_4 x)}\over{1+exp(P_3 + P_4 x)}}$$
 
 **Question 3:** Is this process model a dynamic model? Why or why not?
 
-**Answer 3:**
+**Answer 3:** No. It doesn't involve the concept of using the most recent previous value to determine the current value.
 
 **Question 4:** Based on the equation above, write a function that predicts the gcc_90 as a function of the parameters ($P$) and x where x is the DOY. Name that function `pred_logistic`.
 
 **Answer 4:**
 
 ```{r}
-#Add Answer
+pred_logistic <- function(x, par) {
+  y <- par[1] + (par[2]*exp(par[3]+par[4]*x))/(1+(exp(par[3]+par[4]*x)))
+}
 ```
 
 **Question 5:** Write a function that calculates the negative log-likelihood of the data given a set of parameters governing the process and data models. Assume a normal distribution and be sure to estimate the sd in the data model.
@@ -68,7 +73,9 @@ First create a function called \`pred_logistic' that is your process model. The 
 **Answer 5:**
 
 ```{r}
-#Add Answer
+LL_fn <- function(par,x,y) {
+  -sum(dnorm(y, mean = pred_logistic(x, par), sd = par[5], log = T))
+}
 ```
 
 **Question 6:** Use the `optim` function to find the most likely parameter values. Use the following as starting values `par = c(0.34,0.11,-15,0.11, 1)` where the first four are the theta parameters from your process model and the fifth is the sd of your data model.
@@ -76,7 +83,11 @@ First create a function called \`pred_logistic' that is your process model. The 
 **Answer 6:**
 
 ```{r}
-#Add Answer
+fit <- optim(par = c(0.34, 0.11, -15, 0.11, 1), fn = LL_fn, method = "BFGS", x = bart_2019$doy, y = bart_2019$observation)
+
+ggplot() +
+  geom_point(data = bart_2019, aes(x=doy, y=observation)) +
+    geom_line(aes(x=bart_2019$doy, y = pred_logistic(x=bart_2019$doy, par = fit$par)))
 ```
 
 **Question 7:** Use your optimal parameters in the `pred_logistic` function to predict the data. Save this as the object `predicted`
@@ -84,7 +95,16 @@ First create a function called \`pred_logistic' that is your process model. The 
 **Answer 7:**
 
 ```{r}
-#Add Answer
+pred_logistic <- function(x, par) {
+  y <- fit$par[1] + ((fit$par[2]*exp(fit$par[3]+fit$par[4]*x))/(1+(exp(fit$par[3]+fit$par[4]*x))))  + fit$par[5]
+}
+
+bart_2019 <- bart_2019 %>%
+  mutate(predicted = pred_logistic(x=bart_2019$doy, par = fit$par))
+
+ggplot() +
+  geom_point(data = bart_2019, aes(x=doy, y=observation)) +
+    geom_line(aes(x=bart_2019$doy, y = pred_logistic(x=bart_2019$doy, par = fit$par)))
 ```
 
 **Question 8:** Calculate the residuals and plot a histogram of the residuals
@@ -92,17 +112,20 @@ First create a function called \`pred_logistic' that is your process model. The 
 **Answer 8:**
 
 ```{r}
-#Add Answer
+res <- bart_2019$predicted - bart_2019$observation
+hist(res)
 ```
 
 **Question 9:** How does the distribution of the data (Question 2) compare to the distribution of the residuals?
 
-**Answer 9:**
+**Answer 9:** The distribution of residuals looks a bit inclined towards normal when compared to the distribution of the data.
 
 **Question 10:** Predict year 2020 using the process model parameters from the 2019 fit.
 
 ```{r}
-#Add Answer
+pred_logistic <- function(x, par) {
+  y <- fit$par[1] + ((fit$par[2]*exp(fit$par[3]+fit$par[4]*x))/(1+(exp(fit$par[3]+fit$par[4]*x))))  + fit$par[5]
+}
 ```
 
 **Answer 10:**
@@ -120,11 +143,15 @@ bart_2020 <- d  %>%
   mutate(doy = yday(datetime)) %>% 
   filter(!is.na(observation),
          observation > 0)
+
+ggplot() +
+  geom_point(data = bart_2020, aes(x=doy, y=observation)) +
+    geom_line(aes(x=bart_2020$doy, y = pred_logistic(x=bart_2020$doy, par = fit$par)))
 ```
 
 **Question 12:** Do you think your model from 2019 is reasonable for predicting 2020?
 
-**Answer 12:**
+**Answer 12:** The model from 2019 seems to over-predict the values a bit when using it for predicting gcc 2020.
 
 ### Part 2 {#sec-q10}
 
@@ -147,6 +174,3 @@ Use maximum likelihood to estimate the parameters in the model that predicts the
 $$\theta_1 * \theta_2 ^{{(T - 20)}\over{10}}$$
 
 Show all the steps to determine the most likely parameter values, report the parameter values, and plot the data and predictions on the same plot
-
-
-
